@@ -11,7 +11,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report
 
-# Download required NLTK data silently
+# baixa os recursos do NLTK se ainda não tiver
 for resource, path in [('punkt_tab', 'tokenizers/punkt_tab'), ('stopwords', 'corpora/stopwords')]:
     try:
         nltk.data.find(path)
@@ -20,12 +20,9 @@ for resource, path in [('punkt_tab', 'tokenizers/punkt_tab'), ('stopwords', 'cor
 
 
 class SentimentClassifier:
-    """
-    Camada I: NLP com Naive Bayes para classificação de sentimentos.
-    Treina sobre o dataset do Kaggle (Coursera reviews) e classifica
-    textos como positivo, negativo ou neutro.
-    """
+    # camada 1 do sistema — classifica o feedback do aluno como positivo, negativo ou neutro
 
+    # mapeamento das estrelas para sentimento (1-2 negativo, 3 neutro, 4-5 positivo)
     LABEL_MAP_NUMERIC = {1: 'negative', 2: 'negative', 3: 'neutral', 4: 'positive', 5: 'positive'}
 
     def __init__(self):
@@ -36,11 +33,8 @@ class SentimentClassifier:
         self.accuracy = 0.0
         self._train()
 
-    # ------------------------------------------------------------------
-    # Pre-processing
-    # ------------------------------------------------------------------
-
     def preprocess(self, text: str) -> str:
+        # limpa o texto e aplica stemming
         text = str(text).lower()
         text = re.sub(r'[^a-zA-Z\s]', ' ', text)
         tokens = word_tokenize(text)
@@ -51,14 +45,9 @@ class SentimentClassifier:
         ]
         return ' '.join(tokens)
 
-    # ------------------------------------------------------------------
-    # Dataset loading — handles the Kaggle Coursera reviews CSV
-    # ------------------------------------------------------------------
-
     def _load_dataset(self) -> pd.DataFrame:
         data_dir = os.path.join(os.path.dirname(__file__), 'data')
 
-        # Try common filenames for the Kaggle download
         candidates = ['reviews.csv', 'coursera_reviews.csv', 'dataset.csv']
         path = None
         for name in candidates:
@@ -68,19 +57,19 @@ class SentimentClassifier:
                 break
 
         if path is None:
-            print("[NLP] Kaggle CSV not found. Using synthetic fallback dataset.")
+            print("[NLP] CSV não encontrado, usando dataset sintético")
             return self._synthetic_dataset()
 
         df = pd.read_csv(path, encoding='utf-8', on_bad_lines='skip')
         df.columns = df.columns.str.strip()
 
-        # --- detect text column ---
+        # detecta a coluna de texto
         text_col = next((c for c in df.columns if c.lower() in ('reviews', 'reviewtext', 'review_text', 'text', 'review')), None)
         if text_col is None:
-            print("[NLP] Could not detect text column. Using synthetic fallback.")
+            print("[NLP] Coluna de texto não encontrada, usando dataset sintético")
             return self._synthetic_dataset()
 
-        # --- detect label ---
+        # detecta a coluna de label ou rating
         label_col = next((c for c in df.columns if c.lower() == 'label'), None)
         rating_col = next((c for c in df.columns if c.lower() in ('rating', 'ratings', 'stars')), None)
 
@@ -89,36 +78,35 @@ class SentimentClassifier:
         if label_col and df[label_col].nunique() <= 5:
             numeric = pd.to_numeric(df[label_col], errors='coerce')
             if numeric.notna().any() and set(numeric.dropna().astype(int).unique()).issubset(self.LABEL_MAP_NUMERIC.keys()):
-                # Numeric 1-5 star labels (Kaggle Coursera dataset)
+                # labels numericos 1-5 (dataset do Kaggle)
                 df = df[numeric.notna()].copy()
                 df['sentiment'] = numeric[df.index].astype(int).map(self.LABEL_MAP_NUMERIC)
             else:
-                # String labels ('positive'/'negative'/'neutral' or '-1'/'0'/'1'/'2')
+                # labels em string
                 labels = df[label_col].astype(str).str.lower().str.strip()
                 valid_labels = {'positive', 'negative', 'neutral', '1', '0', '-1', '2'}
                 df = df[labels.isin(valid_labels)].copy()
                 mapping = {'1': 'positive', '0': 'negative', '-1': 'negative', '2': 'neutral'}
                 df['sentiment'] = labels[df.index].replace(mapping)
         elif rating_col:
-            # Derive sentiment from star rating
             df[rating_col] = pd.to_numeric(df[rating_col], errors='coerce')
             df = df.dropna(subset=[rating_col])
             df['sentiment'] = df[rating_col].round().astype(int).map(self.LABEL_MAP_NUMERIC)
         else:
-            print("[NLP] No label or rating column found. Using synthetic fallback.")
+            print("[NLP] Nenhuma coluna de label encontrada, usando dataset sintético")
             return self._synthetic_dataset()
 
         df = df.dropna(subset=['sentiment'])
         df = df.rename(columns={text_col: 'text'})
 
-        # Balance classes and cap at 20k total for fast training
+        # balanceia as classes para não enviesar o modelo
         per_class = min(6000, df.groupby('sentiment').size().min())
         df = df.groupby('sentiment').sample(n=per_class, random_state=42).reset_index(drop=True)
-        print(f"[NLP] Loaded dataset: {len(df)} samples, distribution:\n{df['sentiment'].value_counts().to_dict()}")
+        print(f"[NLP] Dataset carregado: {len(df)} amostras\n{df['sentiment'].value_counts().to_dict()}")
         return df[['text', 'sentiment']]
 
     def _synthetic_dataset(self) -> pd.DataFrame:
-        """Minimal fallback so the system still runs without the Kaggle file."""
+        # fallback caso o CSV não esteja na pasta data/
         rows = [
             ("This lecture was incredibly clear and the examples were excellent.", "positive"),
             ("Really enjoyed this module. Well structured and engaging content.", "positive"),
@@ -153,10 +141,6 @@ class SentimentClassifier:
         ]
         return pd.DataFrame(rows, columns=['text', 'sentiment'])
 
-    # ------------------------------------------------------------------
-    # Training
-    # ------------------------------------------------------------------
-
     def _train(self):
         df = self._load_dataset()
         processed = [self.preprocess(t) for t in df['text']]
@@ -170,12 +154,8 @@ class SentimentClassifier:
 
         self.model.fit(X_train_vec, y_train)
         self.accuracy = self.model.score(X_test_vec, y_test)
-        print(f"[NLP] Naive Bayes accuracy: {self.accuracy:.2%}")
+        print(f"[NLP] Acurácia Naive Bayes: {self.accuracy:.2%}")
         print(classification_report(y_test, self.model.predict(X_test_vec), zero_division=0))
-
-    # ------------------------------------------------------------------
-    # Inference
-    # ------------------------------------------------------------------
 
     def predict(self, text: str) -> dict:
         processed = self.preprocess(text)

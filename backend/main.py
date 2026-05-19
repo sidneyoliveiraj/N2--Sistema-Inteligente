@@ -13,7 +13,7 @@ from layer3_sa import StudySchedulerSA
 logging.basicConfig(level=logging.INFO, format="%(levelname)s  %(message)s")
 log = logging.getLogger(__name__)
 
-# ── Modelos globais (carregados uma vez na inicialização) ─────────────────────
+# instâncias globais dos três modelos
 nlp: SentimentClassifier | None = None
 fuzzy: FuzzyEngagementSystem | None = None
 sa: StudySchedulerSA | None = None
@@ -40,8 +40,7 @@ app.add_middleware(
 )
 
 
-# ── Schemas ────────────────────────────────────────────────────────────────────
-
+# schemas de entrada
 class FeedbackIn(BaseModel):
     text:   str
     rating: float = Field(..., ge=1, le=5)
@@ -55,8 +54,6 @@ class TopicIn(BaseModel):
 class PipelineRequest(BaseModel):
     topics: List[TopicIn]
 
-
-# ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @app.get("/health")
 def health():
@@ -73,7 +70,6 @@ def health():
 
 @app.post("/analyze")
 def analyze(body: FeedbackIn):
-    """Analisa um único feedback — útil para testes rápidos."""
     if not nlp or not fuzzy:
         raise HTTPException(503, "Modelos ainda não carregados")
 
@@ -84,12 +80,6 @@ def analyze(body: FeedbackIn):
 
 @app.post("/pipeline")
 def pipeline(body: PipelineRequest):
-    """
-    Executa o pipeline completo:
-      Camada I  → Naive Bayes por feedback
-      Camada II → Fuzzy por tópico (média dos feedbacks)
-      Camada III → SA para sequência de estudo ótima
-    """
     if not nlp or not fuzzy or not sa:
         raise HTTPException(503, "Modelos ainda não carregados")
 
@@ -125,7 +115,7 @@ def pipeline(body: PipelineRequest):
             "engagement_score": layer2["engagement_score"],
         })
 
-    # Camada III — otimiza a sequência de estudo
+    # passa os scores para o SA ordenar a sequência de estudo
     sa_input  = [{"name": t["name"], "engagement_score": t["engagement_score"]} for t in topics_result]
     sa_result = sa.optimize(sa_input)
 

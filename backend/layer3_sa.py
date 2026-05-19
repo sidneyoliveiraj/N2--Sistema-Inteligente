@@ -3,19 +3,8 @@ import random
 
 
 class StudySchedulerSA:
-    """
-    Camada III: Simulated Annealing para otimização do plano de estudos.
-
-    Problema: dado N tópicos com seus scores de engajamento, encontrar
-    a sequência que minimize o custo total do plano de estudos.
-
-    Função de custo:
-      - Penaliza aumentos bruscos de dificuldade (quedas no engajamento).
-      - Penaliza início com tópico de baixo engajamento.
-      - Incentiva término com o tópico mais desafiador.
-
-    Vizinhança: troca de dois tópicos aleatórios (swap).
-    """
+    # camada 3 — Simulated Annealing para ordenar os tópicos na melhor sequência de estudo
+    # a ideia é minimizar o custo total, penalizando sequências que variam muito de engajamento
 
     def __init__(
         self,
@@ -24,14 +13,10 @@ class StudySchedulerSA:
         min_temp: float = 0.5,
         iters_per_temp: int = 60,
     ):
-        self.initial_temp  = initial_temp
-        self.cooling_rate  = cooling_rate
-        self.min_temp      = min_temp
+        self.initial_temp   = initial_temp
+        self.cooling_rate   = cooling_rate
+        self.min_temp       = min_temp
         self.iters_per_temp = iters_per_temp
-
-    # ------------------------------------------------------------------
-    # Função objetivo
-    # ------------------------------------------------------------------
 
     def _cost(self, sequence: list[int], scores: list[float]) -> float:
         n = len(sequence)
@@ -43,22 +28,18 @@ class StudySchedulerSA:
             diff = curr - nxt
 
             if diff > 0:
-                # Queda gradual de engajamento → progressão normal de dificuldade
+                # queda gradual de engajamento é ok
                 total += diff * 0.5
             else:
-                # Salto para cima depois de queda → sequência desconexa, penalidade maior
+                # subida depois de queda é ruim — sequência desconexa
                 total += abs(diff) * 2.0
 
-        # Premia início com tópico de alto engajamento (motiva o aluno)
+        # penaliza começar com tópico de baixo engajamento
         total += (10.0 - scores[sequence[0]]) * 2.0
-        # Penaliza levemente encerrar com tópico fácil (o mais desafiador deve ser último)
+        # penaliza terminar com tópico muito fácil
         total += scores[sequence[-1]] * 0.5
 
         return total
-
-    # ------------------------------------------------------------------
-    # Otimização SA
-    # ------------------------------------------------------------------
 
     def optimize(self, topics: list[dict]) -> dict:
         n = len(topics)
@@ -76,11 +57,11 @@ class StudySchedulerSA:
         names  = [t['name']             for t in topics]
         scores = [t['engagement_score'] for t in topics]
 
-        # Solução inicial: ordem decrescente de engajamento (greedy)
-        current    = sorted(range(n), key=lambda i: scores[i], reverse=True)
-        curr_cost  = self._cost(current, scores)
-        best       = current[:]
-        best_cost  = curr_cost
+        # começa com a sequência ordenada por engajamento decrescente
+        current      = sorted(range(n), key=lambda i: scores[i], reverse=True)
+        curr_cost    = self._cost(current, scores)
+        best         = current[:]
+        best_cost    = curr_cost
         initial_cost = curr_cost
 
         temp = self.initial_temp
@@ -88,6 +69,7 @@ class StudySchedulerSA:
 
         while temp > self.min_temp:
             for _ in range(self.iters_per_temp):
+                # gera vizinho trocando dois tópicos de posição
                 i, j = random.sample(range(n), 2)
                 neighbor = current[:]
                 neighbor[i], neighbor[j] = neighbor[j], neighbor[i]
@@ -95,7 +77,7 @@ class StudySchedulerSA:
                 nb_cost = self._cost(neighbor, scores)
                 delta   = nb_cost - curr_cost
 
-                # Aceita solução melhor ou pior (com probabilidade de Boltzmann)
+                # aceita o vizinho se for melhor ou pela probabilidade de Boltzmann
                 if delta < 0 or random.random() < math.exp(-delta / temp):
                     current   = neighbor
                     curr_cost = nb_cost
@@ -116,7 +98,7 @@ class StudySchedulerSA:
             for pos, idx in enumerate(best)
         ]
 
-        # Reduz a curva de convergência para ~20 pontos (visualização)
+        # reduz para ~20 pontos para facilitar a visualização no frontend
         step = max(1, len(convergence) // 20)
         convergence_sampled = convergence[::step]
 
